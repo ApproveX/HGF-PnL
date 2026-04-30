@@ -1,0 +1,13 @@
+{
+  "name": "approvex",
+  "owner": {
+    "name": "ApproveX"
+  },
+  "plugins": [
+    {
+      "name": "hgf-pnl",
+      "source": "./",
+      "description": "Claude Code plugin for HGF P&L workflows."
+    }
+  ]
+}
