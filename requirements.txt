@@ -1,0 +1,18 @@
+polars[calamine]>=1.29,<2
+openpyxl>=3.1,<4
+fastexcel>=0.13,<0.14
+pyarrow>=19,<20
+pydantic>=2.11,<3
+python-dateutil>=2.9,<3
+rapidfuzz>=3.13,<4
+pypdf>=5.4,<6
+pdfplumber>=0.11,<0.12
+python-docx>=1.1,<2
+pillow>=11,<12
+typer>=0.15,<0.16
+rich>=14,<15
+
+# Development / verification
+pytest>=8.3,<9
+ruff>=0.11,<0.12
+mypy>=1.15,<2

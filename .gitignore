@@ -1,0 +1,43 @@
+# Python / tooling
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Client-provided or generated financial data
+sample_files/
+tmp/
+runs/
+artifacts/
+outputs/
+
+# Local agent/editor state
+.claude/settings.local.json
+.codex
+.hgf_close_state/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Office/PDF/OS sidecar and lock files
+~$*
+*.tmp
+*.bak
+*.Zone.Identifier
+*:Zone.Identifier
+.DS_Store
+Thumbs.db

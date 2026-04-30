@@ -1,0 +1,41 @@
+[project]
+name = "hgf-pnl"
+version = "0.1.0"
+description = "Ingestion and reporting tools for HGF P&L close packages."
+requires-python = ">=3.12"
+dependencies = [
+    "polars[calamine]>=1.29,<2",
+    "openpyxl>=3.1,<4",
+    "fastexcel>=0.13,<0.14",
+    "pyarrow>=19,<20",
+    "pydantic>=2.11,<3",
+    "python-dateutil>=2.9,<3",
+    "rapidfuzz>=3.13,<4",
+    "pypdf>=5.4,<6",
+    "pdfplumber>=0.11,<0.12",
+    "python-docx>=1.1,<2",
+    "pillow>=11,<12",
+    "typer>=0.15,<0.16",
+    "rich>=14,<15",
+]
+
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hgf_pnl*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.11,<0.12",
+    "mypy>=1.15,<2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

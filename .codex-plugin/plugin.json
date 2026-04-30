@@ -1,0 +1,33 @@
+{
+  "name": "hgf-pnl",
+  "version": "0.3.0",
+  "description": "Agent tools for HGF monthly close P&L ingestion, audit, and consolidated workbook generation.",
+  "author": {
+    "name": "ApproveX"
+  },
+  "keywords": [
+    "finance",
+    "monthly-close",
+    "excel",
+    "pnl",
+    "audit"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "HGF P&L Close",
+    "shortDescription": "Ingest, audit, and generate HGF monthly P&L packages.",
+    "longDescription": "Provides agent instructions and local Python tooling for HGF monthly close package discovery, source extraction, review/audit manifests, and consolidated P&L workbook generation.",
+    "developerName": "ApproveX",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Discover this HGF close package and create a run manifest.",
+      "Run HGF extractors and summarize review warnings.",
+      "Generate the consolidated P&L workbook from approved values."
+    ],
+    "brandColor": "#2F6F5E"
+  }
+}
