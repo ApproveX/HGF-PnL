@@ -1,0 +1,8 @@
+{
+    "name": "hgf-pnl",
+    "version": "0.1.0",
+    "description": "Claude Code plugin for HGF P&L workflows.",
+    "author": {
+        "name": "ApproveX"
+    }
+}
