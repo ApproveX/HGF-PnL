@@ -16,7 +16,21 @@ skills/hgf-monthly-close/
 └── scripts/            ← CLI entry points
 ```
 
-All commands below assume the working directory is the plugin root (the directory that contains `pyproject.toml` and `.claude-plugin/`).
+The plugin source itself is read-only on most installs, so the Python venv lives at a separate, user-writable location. The bootstrap command sets this up; the skill expects:
+
+| What | Path |
+|---|---|
+| Python interpreter (`$HGF_PY`) | `$HOME/.local/share/hgf-pnl/venv/bin/python` |
+| Plugin source root (`$HGF_ROOT`) | contents of `$HOME/.local/share/hgf-pnl/plugin_root` |
+| Run output directory | `tmp/runs/<period-slug>/` under the user's current working directory (writable) |
+
+In every example below, treat `$HGF_PY` and `$HGF_ROOT` as placeholders. Because shell variables do not persist across separate Bash tool calls, define both at the top of each call, or substitute the resolved literal paths:
+
+```bash
+HGF_PY="$HOME/.local/share/hgf-pnl/venv/bin/python"
+HGF_ROOT="$(cat $HOME/.local/share/hgf-pnl/plugin_root)"
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/discover_package.py" --help
+```
 
 ## Core Rule
 
@@ -54,13 +68,23 @@ If you hit a warning that requires the user's judgement (override approval, unkn
 
 ## Setup
 
-If `.venv/bin/python` does not exist at the plugin root, or `python -c "import hgf_pnl"` fails, run:
+If either of these is missing, run `/hgf-pnl-bootstrap` before doing anything else:
 
-```text
-/hgf-pnl-bootstrap
+- `$HOME/.local/share/hgf-pnl/venv/bin/python`
+- `$HOME/.local/share/hgf-pnl/plugin_root`
+
+A quick check:
+
+```bash
+test -x "$HOME/.local/share/hgf-pnl/venv/bin/python" \
+  && test -f "$HOME/.local/share/hgf-pnl/plugin_root" \
+  && "$HOME/.local/share/hgf-pnl/venv/bin/python" -c "import hgf_pnl" \
+  && echo OK
 ```
 
-That command creates the venv, installs the editable `hgf_pnl` package, smoke-tests a script, and reports whether LibreOffice is available for workbook recalculation. Do not invent a manual setup path; let the bootstrap command handle it so failures are surfaced consistently.
+If anything fails, run `/hgf-pnl-bootstrap`. That command creates the external venv, installs `hgf_pnl` as a wheel (the plugin source is read-only, so editable installs do not work), records the plugin source path, smoke-tests a script, and reports whether LibreOffice is available for workbook recalculation. Do not invent a manual setup path; let the bootstrap command handle it so failures are surfaced consistently.
+
+When the plugin updates, re-run `/hgf-pnl-bootstrap` to pick up the new `hgf_pnl` code in the venv.
 
 ## Workflow
 
@@ -81,7 +105,7 @@ Do not skip the manifest. It is the audit trail for what the agent believed, use
 Always run discovery first. It scans the close-package folder, classifies every file, and produces an initial manifest.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/discover_package.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/discover_package.py" \
   "sample_files/Workpapers MARCH" \
   --manifest-output tmp/runs/march-2026/run_manifest.json
 ```
@@ -89,7 +113,7 @@ Always run discovery first. It scans the close-package folder, classifies every 
 Use `--inspect-workbooks` when classification is ambiguous or when sheet names will help downstream config:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/discover_package.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/discover_package.py" \
   "sample_files/Workpapers MARCH" \
   --inspect-workbooks \
   --discovery-output tmp/runs/march-2026/discovery.json \
@@ -113,7 +137,7 @@ Use the configured extractors instead of writing one-off parsing code. Most Exce
 - `--init-config <path>`
 - `--no-calculate-formulas`
 
-Formula evaluation is on by default for Excel extractors. Unsupported formulas are preserved as warnings/status values, not silently coerced. The supported subset and known unsupported areas are documented in `docs/extractors.md`.
+Formula evaluation is on by default for Excel extractors. Unsupported formulas are preserved as warnings/status values, not silently coerced. The supported subset and known unsupported areas are documented in `$HGF_ROOT/skills/hgf-monthly-close/docs/extractors.md`.
 
 When a file is natural-language-heavy or accountant-reviewed, inspect it before running strict extraction. For chargeback PDFs, inspect text/table structure before choosing extraction settings. For addbacks, read the PDF/email instructions first, then configure the reviewed GL workbook extractor. For yellow/red/magenta reviewed GL rows, preserve both source color and semantic comments.
 
@@ -124,7 +148,7 @@ When changing extractor config, write the config to the run directory and record
 Matrix P&L unpivot for `Workpapers <MONTH>/DATA/Profit and Loss By Dept.xlsx`. Header row 5; data rows roughly 6 through 52.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_pl_by_dept.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_pl_by_dept.py" \
   "sample_files/Workpapers MARCH/DATA/Profit and Loss By Dept.xlsx" \
   --output tmp/runs/march-2026/pl_by_dept.csv \
   --format csv
@@ -137,7 +161,7 @@ Use `--no-totals` to drop rollup columns. Configurable keys: `sheet_name`, `head
 Three sheets — `Summary`, `Details`, `USA Stock`. The March sample's `Details` sheet already includes the USA Stock rows; treat `usa_stock` as a supporting subset, not additive to `po_details` revenue.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_th_revenue.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_th_revenue.py" \
   "sample_files/Workpapers MARCH/DATA/TH March 2026 Revenue Report.xlsx" \
   --output-dir tmp/runs/march-2026/th_revenue \
   --format csv
@@ -150,7 +174,7 @@ Smoke-check expected for March 2026: summary and details non-total revenue both 
 Two sheets: `Payroll` (source of truth) and `Payroll Distribution` (intermediary copy that may have stale formulas). By default, distribution output is derived from the `Payroll` sheet. Only use `--use-distribution-sheet` when you have reviewed the workbook and intentionally want the intermediary parsed.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_payroll_journal.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_payroll_journal.py" \
   "sample_files/PAYROLL/Payroll Journal_March 2026.xlsx" \
   --output-dir tmp/runs/march-2026/payroll_journal \
   --format csv
@@ -158,14 +182,49 @@ Two sheets: `Payroll` (source of truth) and `Payroll Distribution` (intermediary
 
 Output tables: `employees`, `allocations`, `allocation_summaries`, `distribution`. The `allocation_summaries` table is the preferred source for `Payroll - Art` and `Payroll- IT` actuals on `MARCH 2026 FULL `. March 2026 spot checks: 43 employee rows, gross pay total `241,161.25`, Art `32,961.56`, IT `15,846.15`, Production `64,635.26`, Corp `64,655.38`.
 
+Critical writer mapping from `payroll_allocation_summaries.csv`:
+
+| summary filter | writer key |
+|---|---|
+| `department == "Art"` and `allocation_category == "TH"` | `raw_payroll.allocation_breakdowns.art.trend_house` |
+| `department == "Art"` and `allocation_category == "B&M USA"` | `raw_payroll.allocation_breakdowns.art.og_specialty_usa` |
+| `department == "Art"` and `allocation_category == "Online Lux"` | `raw_payroll.allocation_breakdowns.art.online_lux` |
+| `department == "Art"` and `allocation_category == "Online"` | `raw_payroll.allocation_breakdowns.art.online` |
+| `department == "Art"` and `allocation_category == "OG DTC"` | `raw_payroll.allocation_breakdowns.art.dtc` |
+| `department == "Art"` and `allocation_category == "APA"` | `raw_payroll.allocation_breakdowns.art.all_pop_art` |
+| `department == "Art"` and `allocation_category == "General"` | `raw_payroll.allocation_breakdowns.art.general` |
+| `department == "Art"` and `allocation_category == "Total"` | `raw_payroll.allocation_breakdowns.art.total` |
+| `department == "IT"` and `allocation_category == "Online"` | `raw_payroll.allocation_breakdowns.it.online` |
+| `department == "IT"` and `allocation_category == "OG DTC"` | `raw_payroll.allocation_breakdowns.it.dtc` |
+| `department == "IT"` and `allocation_category == "General"` | `raw_payroll.allocation_breakdowns.it.general` |
+| `department == "IT"` and `allocation_category == "Total"` | `raw_payroll.allocation_breakdowns.it.total` |
+
+If a direct Art/IT category is absent from the summary table for a month, set that writer key to `0` rather than omitting the whole `allocation_breakdowns` object. The writer intentionally skips all Art/IT formula writes when none of the formula source values are present.
+
 The March 2026 `Lital Allocation in G&A Exp` block on `Payroll Distribution` has formulas pointing at the wrong source rows for TH and CORP. The source rows on `Payroll!M57` and `Payroll!M59` match the cached values.
 
 ### `extract_br_info.py` — Manual Override Table
 
-`BR Info.xlsx` is accountant-entered overrides keyed by month. Rows go to long format: `year`, `month_num`, `month_name`, `override_name`, `value`. The March 2026 sample has 8 override rows totaling `35,197.00` on the `2026` sheet.
+`BR Info.xlsx` is accountant-entered overrides keyed by month. Rows go to long format: `year`, `month_num`, `month_name`, `override_name`, `value`. The current March 2026 sample has 9 override rows totaling `578,002.00` on the `2026` sheet, including Online Sales. Do not rely on older notes that say 8 rows or `35,197.00`.
+
+Resolve March BR Info rows into writer values using these known labels:
+
+| BR Info override label | writer key |
+|---|---|
+| `Online Sales` | `raw_master.sales.online` |
+| `AllPopArt Sales` | `raw_master.sales.apa` |
+| `AllPopArt Returns and Allowances` | `raw_master.returns.apa` |
+| `Employee Benefits` | `full_report.source_totals.employee_benefits` |
+| `Equipment Leasing` | `raw_master.gl.equipment_lease_adjustment` |
+| `Bank Fees` | `raw_master.gl.bank_fees_adjustment` |
+| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees_adjustment` |
+| `License & Tax` | `raw_master.gl.licenses_taxes_permits` |
+| `LOC Interest` | `raw_master.gl.loc_interest` |
+
+Review every BR Info row before writing. If a label is new or ambiguous, add it to the manifest as `needs_review` instead of guessing.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_br_info.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_br_info.py" \
   "sample_files/BR Info.xlsx" \
   --output tmp/runs/march-2026/br_info.csv \
   --format csv
@@ -176,7 +235,7 @@ The March 2026 `Lital Allocation in G&A Exp` block on `Payroll Distribution` has
 Four sheets — summary, Shopify orders, refunds, coupons.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_monthly_revenue.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_monthly_revenue.py" \
   "sample_files/Workpapers MARCH/DATA/DTC & WS Monthly Revenue - report (03.01-03.31) (1).xlsx" \
   --output-dir tmp/runs/march-2026/monthly_revenue \
   --format csv
@@ -189,7 +248,7 @@ March 2026 spot checks: Shopify net sales `163,408.05` (DTC `146,599.00` + WS `1
 Year matrix tabs (`2018`–`2026`) and partner detail tabs (`YYYY Partner Details`). Year matrices are forward-filled by month because many rows use merged month cells. Partner detail tabs unpivot from repeated month groups of `COGS`, `Material Cost`, `Labor Cost`. `VLOOKUP` formulas with workbook-index/whole-column references are reported unsupported rather than evaluated.
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_division_cogs.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_division_cogs.py" \
   "sample_files/Workpapers MARCH/DATA/INTERNAL - Division COGS 2019 - Current (26).xlsx" \
   --output-dir tmp/runs/march-2026/division_cogs \
   --format csv
@@ -204,7 +263,7 @@ This is the agentic step. Read the email/PDF instructions first (`March Addbacks
 Run with the declared total parsed from the email:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_addbacks_gl.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_addbacks_gl.py" \
   "sample_files/Workpapers MARCH/HGF GL_March_Sent April 13_DONE.xlsx" \
   --declared-addbacks-total 23195 \
   --output-dir tmp/runs/march-2026/addbacks_gl \
@@ -218,7 +277,7 @@ For the March sample, the comment-based addback total `23,195.16` is the authori
 The PDF is an email export. `pdfplumber` table extraction loses some monthly summary values, so the extractor parses line text and preserves source page/line references. Always profile first:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/profile_chargeback_pdf.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/profile_chargeback_pdf.py" \
   "sample_files/Workpapers MARCH/DATA/- OG _ Chargeback Report - 03. March 2026.pdf" \
   --output-dir tmp/runs/march-2026/chargeback_pdf_profile
 ```
@@ -226,7 +285,7 @@ The PDF is an email export. `pdfplumber` table extraction loses some monthly sum
 Inspect `chargeback_pdf_profile.md` and `chargeback_pdf_raw_text.txt`, edit `chargeback_pdf_suggested_config.json` if anchors/category order/month/year need adjustment, then run:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/extract_chargeback_pdf.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/extract_chargeback_pdf.py" \
   "sample_files/Workpapers MARCH/DATA/- OG _ Chargeback Report - 03. March 2026.pdf" \
   --config tmp/runs/march-2026/chargeback_pdf_profile/chargeback_pdf_suggested_config.json \
   --output-dir tmp/runs/march-2026/chargeback_pdf \
@@ -281,6 +340,8 @@ Key namespaces include:
 - `raw_cogs.*` — COGS & Freight raw-data tab
 - `raw_payroll.*` — Payroll raw-data tab, plus `raw_payroll.allocation_breakdowns.{art,it}.*` for the visible Art/IT actual rows on `MARCH 2026 FULL `
 
+The writer does not build this JSON from extractor outputs. The agent must explicitly transform reviewed extractor rows into these keys. In particular, do not stop after writing `payroll_allocation_summaries.csv` or `br_info.csv`; map those rows into `consolidated_values.json` before running the writer.
+
 ## Step 5 — Run The Writer
 
 The writer targets the hidden raw-data tabs and preserves the visible `MARCH 2026 FULL ` formulas and styles:
@@ -304,7 +365,7 @@ The writer can refresh the visible `Payroll - Art` and `Payroll- IT` actual form
 Generate an editable writer config:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/write_consolidated_pnl.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/write_consolidated_pnl.py" \
   "sample_files/HGF CONSOLIDATED_MARCH 2026 Template.xlsx" \
   tmp/unused.xlsx \
   --init-config tmp/runs/march-2026/consolidated_writer_config.json
@@ -313,7 +374,7 @@ Generate an editable writer config:
 Write the workbook from approved values:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/write_consolidated_pnl.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/write_consolidated_pnl.py" \
   "sample_files/HGF CONSOLIDATED_MARCH 2026 Template.xlsx" \
   tmp/runs/march-2026/HGF_CONSOLIDATED_MARCH_2026_GENERATED.xlsx \
   --values tmp/runs/march-2026/consolidated_values.json \
@@ -323,7 +384,7 @@ Write the workbook from approved values:
 For sample round-trip testing only, values can be extracted from a completed workbook:
 
 ```bash
-.venv/bin/python skills/hgf-monthly-close/scripts/write_consolidated_pnl.py \
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/write_consolidated_pnl.py" \
   "sample_files/HGF CONSOLIDATED_MARCH 2026 Template.xlsx" \
   tmp/unused.xlsx \
   --values tmp/runs/march-2026/consolidated_values_from_final.json \
@@ -398,4 +459,4 @@ Never present a generated workbook as client-ready if formula recalculation or r
 | `extract_chargeback_pdf.py` | `hgf_pnl.extractors.chargeback_pdf` | Run with profiled config |
 | `write_consolidated_pnl.py` | `hgf_pnl.writers.consolidated_pnl` | Writes hidden raw-data tabs only |
 
-Detailed module documentation lives in `docs/pipeline.md`, `docs/extractors.md`, `docs/consolidated_writer.md`, and `docs/priority_file_exploration.md`.
+Detailed module documentation lives in `$HGF_ROOT/skills/hgf-monthly-close/docs/pipeline.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/extractors.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/consolidated_writer.md`, and `$HGF_ROOT/skills/hgf-monthly-close/docs/priority_file_exploration.md`.
