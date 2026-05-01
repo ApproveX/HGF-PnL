@@ -1,14 +1,14 @@
 {
-  "name": "approvex",
-  "owner": {
-    "name": "ApproveX"
-  },
-  "plugins": [
-    {
-      "name": "hgf-pnl",
-      "source": "./",
-      "version": "0.4.0",
-      "description": "Claude Code plugin for HGF monthly close P&L package ingestion, audit, and workbook generation."
-    }
-  ]
+    "name": "approvex",
+    "owner": {
+        "name": "ApproveX"
+    },
+    "plugins": [
+        {
+            "name": "hgf-pnl",
+            "source": "./",
+            "version": "0.4.1",
+            "description": "Claude Code plugin for HGF monthly close P&L package ingestion, audit, and workbook generation."
+        }
+    ]
 }
