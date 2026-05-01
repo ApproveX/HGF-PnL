@@ -1,6 +1,6 @@
 {
   "name": "hgf-pnl",
-  "version": "0.3.0",
+  "version": "0.4.2",
   "description": "Agent tools for HGF monthly close P&L ingestion, audit, and consolidated workbook generation.",
   "author": {
     "name": "ApproveX"

@@ -7,7 +7,7 @@
         {
             "name": "hgf-pnl",
             "source": "./",
-            "version": "0.4.2",
+            "version": "0.4.3",
             "description": "Claude Code plugin for HGF monthly close P&L package ingestion, audit, and workbook generation."
         }
     ]

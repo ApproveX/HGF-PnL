@@ -118,6 +118,23 @@ The March 2026 payroll allocation layout intentionally replaces the template's o
 
 The writer can also refresh the visible `Payroll - Art` and `Payroll- IT` actual formulas on `MARCH 2026 FULL `. These formulas intentionally overwrite the stale template constants when `raw_payroll.allocation_breakdowns` values are present. If no breakdown values are present, those cells are skipped and the template formulas remain unchanged.
 
+Build these values from `payroll_allocation_summaries` before running the writer. The writer does not inspect payroll extractor outputs directly.
+
+Mapping:
+
+| `payroll_allocation_summaries` filter | writer key |
+|---|---|
+| `department=Art`, `allocation_category=TH` | `raw_payroll.allocation_breakdowns.art.trend_house` |
+| `department=Art`, `allocation_category=B&M USA` | `raw_payroll.allocation_breakdowns.art.og_specialty_usa` |
+| `department=Art`, `allocation_category=Online Lux` | `raw_payroll.allocation_breakdowns.art.online_lux` |
+| `department=Art`, `allocation_category=Online` | `raw_payroll.allocation_breakdowns.art.online` |
+| `department=Art`, `allocation_category=OG DTC` | `raw_payroll.allocation_breakdowns.art.dtc` |
+| `department=Art`, `allocation_category=APA` | `raw_payroll.allocation_breakdowns.art.all_pop_art` |
+| `department=Art`, `allocation_category=General` | `raw_payroll.allocation_breakdowns.art.general` |
+| `department=IT`, `allocation_category=Online` | `raw_payroll.allocation_breakdowns.it.online` |
+| `department=IT`, `allocation_category=OG DTC` | `raw_payroll.allocation_breakdowns.it.dtc` |
+| `department=IT`, `allocation_category=General` | `raw_payroll.allocation_breakdowns.it.general` |
+
 Expected value keys:
 
 ```json

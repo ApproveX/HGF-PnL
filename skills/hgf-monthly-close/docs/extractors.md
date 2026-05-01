@@ -228,6 +228,25 @@ The `allocation_summaries` table is the preferred source for report rows that ne
 - IT comes from `Payroll!G38:J38`: `OG DTC`, `Online`, `General`, and `Total`.
 - `General` should be allocated to the P&L actual columns using the visible revenue-share cells for the target column.
 
+When preparing writer values, map `allocation_summaries` rows into `raw_payroll.allocation_breakdowns`:
+
+| department | allocation_category | writer key |
+|---|---|---|
+| `Art` | `TH` | `raw_payroll.allocation_breakdowns.art.trend_house` |
+| `Art` | `B&M USA` | `raw_payroll.allocation_breakdowns.art.og_specialty_usa` |
+| `Art` | `Online Lux` | `raw_payroll.allocation_breakdowns.art.online_lux` |
+| `Art` | `Online` | `raw_payroll.allocation_breakdowns.art.online` |
+| `Art` | `OG DTC` | `raw_payroll.allocation_breakdowns.art.dtc` |
+| `Art` | `APA` | `raw_payroll.allocation_breakdowns.art.all_pop_art` |
+| `Art` | `General` | `raw_payroll.allocation_breakdowns.art.general` |
+| `Art` | `Total` | `raw_payroll.allocation_breakdowns.art.total` |
+| `IT` | `Online` | `raw_payroll.allocation_breakdowns.it.online` |
+| `IT` | `OG DTC` | `raw_payroll.allocation_breakdowns.it.dtc` |
+| `IT` | `General` | `raw_payroll.allocation_breakdowns.it.general` |
+| `IT` | `Total` | `raw_payroll.allocation_breakdowns.it.total` |
+
+Use `0` for absent direct categories so the writer can still refresh every Art/IT actual formula.
+
 The `Payroll Distribution` sheet is treated as an intermediary copy format. By default, the extractor derives distribution output directly from the `Payroll` sheet, which is the source of truth. This matters for the March 2026 `Lital Allocation in G&A Exp` block: the intermediary sheet has formulas pointing at the wrong source rows for TH and CORP, while the source formulas on `Payroll!M57` and `Payroll!M59` match the cached values.
 
 Use `--use-distribution-sheet` only when an agent has reviewed the workbook and intentionally wants the intermediary sheet parsed.
@@ -336,9 +355,23 @@ Formula evaluation is still available by default for consistency with other Exce
 For the sample workbook:
 - Sheet: `2026`
 - Header row: `2`
-- Parsed override rows: `8`
+- Parsed override rows: `9`
 - Populated month: `March`
-- Value total: `35,197.00`
+- Value total: `578,002.00`
+
+Known March labels and writer targets:
+
+| override_name | writer key |
+|---|---|
+| `Online Sales` | `raw_master.sales.online` |
+| `AllPopArt Sales` | `raw_master.sales.apa` |
+| `AllPopArt Returns and Allowances` | `raw_master.returns.apa` |
+| `Employee Benefits` | `full_report.source_totals.employee_benefits` |
+| `Equipment Leasing` | `raw_master.gl.equipment_lease_adjustment` |
+| `Bank Fees` | `raw_master.gl.bank_fees_adjustment` |
+| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees_adjustment` |
+| `License & Tax` | `raw_master.gl.licenses_taxes_permits` |
+| `LOC Interest` | `raw_master.gl.loc_interest` |
 
 ### Output Shape
 
