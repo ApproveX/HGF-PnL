@@ -39,8 +39,8 @@ CATEGORY_ORDER = [
 class ChargebackPDFConfig(BaseModel):
     """Agent-adjustable extraction rules for chargeback report email PDFs."""
 
-    target_month_name: str | None = "March"
-    target_year: int | None = 2026
+    target_month_name: str | None = None
+    target_year: int | None = None
     monthly_category_order: list[str] = Field(default_factory=lambda: CATEGORY_ORDER.copy())
     customer_detail_start_patterns: list[str] = Field(
         default_factory=lambda: [r"^Month Department Customer .*SUM of Deduction Amount$"]
@@ -72,6 +72,7 @@ class PDFLine:
 @dataclass
 class ChargebackPDFExtraction:
     path: Path
+    config: ChargebackPDFConfig
     subject: str | None
     lines: list[PDFLine]
     monthly_summary_rows: list[dict[str, Any]]
@@ -95,6 +96,7 @@ class ChargebackPDFExtraction:
     def to_dict(self) -> dict[str, Any]:
         return {
             "path": str(self.path),
+            "config": self.config.model_dump(),
             "subject": self.subject,
             "warnings": self.warnings,
             "monthly_summary_rows": self.monthly_summary_rows,
@@ -130,8 +132,8 @@ def extract_chargeback_pdf(
     path: Path,
     config: ChargebackPDFConfig | None = None,
 ) -> ChargebackPDFExtraction:
-    config = config or ChargebackPDFConfig()
     lines = extract_pdf_lines(path)
+    config = config or suggest_config(lines)
     subject = detect_subject(lines)
     monthly_summary_rows = parse_monthly_summary(lines, config)
     customer_detail_rows = parse_customer_detail(lines, config)
@@ -139,6 +141,7 @@ def extract_chargeback_pdf(
     warnings = validate_extraction(monthly_summary_rows, customer_detail_rows, reconciliation_rows, config)
     return ChargebackPDFExtraction(
         path=path,
+        config=config,
         subject=subject,
         lines=lines,
         monthly_summary_rows=monthly_summary_rows,

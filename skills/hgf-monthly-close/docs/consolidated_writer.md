@@ -53,9 +53,11 @@ The writer targets the hidden raw-data tabs:
 - `RAW DATA_COGS & Freight`
 - `RAW DATA_Payroll`
 
-It preserves the visible `MARCH 2026 FULL ` formulas and styles. One known exception is `MARCH 2026 FULL !EB48`, the hidden source-total cell for Employee Benefits, because the template does not stage that BR Info override in a raw-data tab.
+It preserves the visible period `FULL` sheet formulas and styles. One known exception is `EB48` on the period `FULL` sheet, the hidden source-total cell for Employee Benefits, because the template does not stage that BR Info override in a raw-data tab.
 
 The writer also sets workbook calculation flags so Excel/LibreOffice should recalculate formulas when opened or saved.
+
+The default config uses `MARCH 2026 FULL ` as a legacy placeholder for the period `FULL` sheet. At runtime, the writer resolves that placeholder to the actual workbook sheet whose name contains `FULL`, such as `APRIL 2026 FULL `. You can force a specific sheet with `--full-report-sheet`.
 
 ## Config Shape
 
@@ -116,7 +118,7 @@ The March 2026 payroll allocation layout intentionally replaces the template's o
 - `RAW DATA_Payroll!B25` becomes `=SUM(B21:B24)`
 - `RAW DATA_Payroll!B26` is cleared
 
-The writer can also refresh the visible `Payroll - Art` and `Payroll- IT` actual formulas on `MARCH 2026 FULL `. These formulas intentionally overwrite the stale template constants when `raw_payroll.allocation_breakdowns` values are present. If no breakdown values are present, those cells are skipped and the template formulas remain unchanged.
+The writer can also refresh the visible `Payroll - Art` and `Payroll- IT` actual formulas on the period `FULL` sheet. These formulas intentionally overwrite the stale template constants when `raw_payroll.allocation_breakdowns` values are present. If no breakdown values are present, those cells are skipped and the template formulas remain unchanged.
 
 Build these values from `payroll_allocation_summaries` before running the writer. The writer does not inspect payroll extractor outputs directly.
 

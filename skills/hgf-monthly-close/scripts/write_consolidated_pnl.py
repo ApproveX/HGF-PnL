@@ -36,6 +36,11 @@ def write(
         "--example-values-from",
         help="Read configured cell values from a completed workbook into --values path and exit.",
     ),
+    full_report_sheet: str | None = typer.Option(
+        None,
+        "--full-report-sheet",
+        help="Exact FULL report sheet name. Defaults to auto-detecting the workbook's FULL sheet.",
+    ),
 ) -> None:
     if init_config is not None:
         write_default_config(init_config)
@@ -43,6 +48,8 @@ def write(
         raise typer.Exit()
 
     writer_config = ConsolidatedPNLWriterConfig.from_json_file(config)
+    if full_report_sheet is not None:
+        writer_config.full_report_sheet_name = full_report_sheet
 
     if example_values_from is not None:
         if values is None:

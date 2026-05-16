@@ -188,6 +188,44 @@ def test_skips_payroll_art_and_it_formula_writes_without_breakdown_values(
         workbook.close()
 
 
+def test_default_config_resolves_renamed_full_report_sheet(tmp_path: Path) -> None:
+    renamed_template = tmp_path / "april_template.xlsx"
+    template_workbook = load_workbook(TEMPLATE, data_only=False)
+    try:
+        template_workbook["MARCH 2026 FULL "].title = "APRIL 2026 FULL "
+        template_workbook.save(renamed_template)
+    finally:
+        template_workbook.close()
+
+    output = tmp_path / "consolidated.xlsx"
+    config = default_consolidated_pnl_writer_config()
+    config.validations = []
+    values = {
+        "full_report": {"source_totals": {"employee_benefits": 10_897.54}},
+        "raw_payroll": {
+            "allocation_breakdowns": {
+                "art": {"trend_house": 13_007.702, "general": 5_923.084},
+                "it": {"trend_house": 0, "general": 13_384.614},
+            }
+        },
+    }
+
+    result = write_consolidated_pnl(renamed_template, output, values, config)
+
+    assert not any("Sheet not found" in warning for warning in result.warnings)
+    assert any(row["sheet_name"] == "APRIL 2026 FULL " for row in result.written_cells)
+    assert not any(row["sheet_name"] == "MARCH 2026 FULL " for row in result.written_cells)
+
+    workbook = load_workbook(output, data_only=False)
+    try:
+        full = workbook["APRIL 2026 FULL "]
+        assert full["EB48"].value == 10_897.54
+        assert full["E44"].value == "=13007.702+F7*5923.084"
+        assert full["E45"].value == "=0.0+F7*13384.614"
+    finally:
+        workbook.close()
+
+
 def test_validates_written_cells(tmp_path: Path) -> None:
     output = tmp_path / "consolidated.xlsx"
     config = ConsolidatedPNLWriterConfig(

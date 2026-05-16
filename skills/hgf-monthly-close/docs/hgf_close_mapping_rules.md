@@ -9,19 +9,19 @@ When mapping Corp-level GL values (Software & Web Corp, Consulting Corp, Travel 
 
 **Why:** The Corporate Dept column only captures expenses coded directly to the corporate cost center. The accountant wants the consolidated company total (minus BM-China) for these line items.
 
-**How to apply:** In consolidated_values.json, any `raw_master.gl.*` or `raw_master.consulting.corp`, `raw_master.software_web.corp`, `raw_master.travel.corp`, `raw_master.meals.corp` should pull from "Total Z-COMPANY" column.
+**How to apply:** In consolidated_values.json, `raw_master.consulting.corp`, `raw_master.software_web.corp`, `raw_master.travel.corp`, `raw_master.meals.corp`, `raw_master.gl.consulting_expense`, `raw_master.gl.software_web_services`, and `raw_master.gl.meals_entertainment` should pull from the "Total Z-COMPANY" column. HR Recruiting is the known exception; use the "Operations Dept" column for `raw_master.gl.hr_recruiting`.
 
 ## BR Info Overrides: Replace vs Supplement
-For certain GL line items, when BR Info provides an override value, it **replaces** the GL base value entirely (the GL cell goes to 0 or empty). This applies to:
-- **Bank Fees**: BR Info value replaces GL; GL cell = 0
-- **Merchant Account Fees**: BR Info value replaces GL; GL cell shows only the small remainder
-- **Equipment Lease**: BR Info value replaces GL; GL cell = empty
+For certain GL line items, when BR Info provides an override value, it **replaces** the GL base value entirely. This applies to:
+- **Bank Fees**
+- **Merchant Account Fees**
+- **Equipment Lease**
 
 For other items (LOC Interest, Licenses & Taxes, etc.), BR Info supplements the GL value normally.
 
 **Why:** The accountant treats certain BR Info items as the authoritative source, zeroing out the GL-derived figure.
 
-**How to apply:** Check which BR Info items the accountant treats as replacements vs supplements. For replacement items, set the GL base cell to 0 and put the full amount in the adjustment cell.
+**How to apply:** For replacement items, set the writer base key to the BR Info value and set the matching adjustment key to `0`. For example, `Bank Fees` writes `raw_master.gl.bank_fees = <BR value>` and `raw_master.gl.bank_fees_adjustment = 0`.
 
 ## BR Info Cents Precision
 BR Info values should preserve full decimal precision from the source file, not round to whole dollars:
@@ -41,7 +41,7 @@ The Trend House Returns cell in RAW DATA_Master File should include the **B&M ch
 **How to apply:** Extract chargeback B&M total and map to `raw_master.returns.trend_house`.
 
 ## DTC Returns = Full DTC + WS Refund Total
-DTC Returns should use the **full DTC+WS refund total** from the Monthly Revenue report, not just the DTC portion. For March 2026 this was -$10,115.17 (not -$9,940.81).
+DTC Returns should use the **full DTC+WS refund total** from the Monthly Revenue report, not just the DTC portion. For March 2026 this was -$10,114.56 (not -$9,940.81).
 
 **Why:** Wholesale refunds processed through Shopify are rolled into the DTC returns line.
 
@@ -58,18 +58,18 @@ In Division COGS, standalone "Online" rows should be **merged into "Online-USA"*
 **How to apply:** When building `raw_cogs.current_month.cogs.online_usa`, add standalone online values.
 
 ## Tariffs Must Be Mapped
-Tariffs from Division COGS must be extracted and mapped to `raw_cogs.tariffs`. For March 2026 this was $73,451.30.
+Tariffs must be extracted and mapped to `raw_cogs.tariffs`. For March 2026 this was $73,451.30.
 
 **Why:** Tariffs were initially missed (set to 0) because the extractor output wasn't properly mapped.
 
-**How to apply:** Look for tariff/duty rows in Division COGS matrix and sum them into `raw_cogs.tariffs`.
+**How to apply:** Prefer the TH Revenue summary tariff total when present; otherwise look for tariff/duty rows in the Division COGS matrix and sum them into `raw_cogs.tariffs`.
 
 ## TH Shipping for Samples
 The TH Shipping (Samples) cell should include sample shipping costs. For March 2026 this was $307.46.
 
 **Why:** The accountant includes sample-related shipping as a separate line item.
 
-**How to apply:** Extract sample shipping from the appropriate source and map to the TH shipping samples cell.
+**How to apply:** Extract sample shipping from the appropriate source and map it to `raw_cogs.shipping_for_samples.current_month`. In the current consolidated template, `RAW DATA_Master File!B97` adds this value to `RAW DATA_COGS & Freight!E27`; do not also add it into `raw_cogs.trend_house.total.shipping_cost` unless the template formula changes.
 
 ## Label Conventions
 - "DTC" in certain Master File cells should be labeled "OG Specialty Trade" to match the accountant's convention

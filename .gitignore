@@ -41,3 +41,4 @@ secrets/
 *:Zone.Identifier
 .DS_Store
 Thumbs.db
+/update_material

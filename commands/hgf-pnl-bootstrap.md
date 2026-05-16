@@ -1,4 +1,5 @@
 ---
+name: hgf-pnl-bootstrap
 description: Bootstrap the HGF P&L plugin — create an external Python venv, install hgf_pnl, and verify the toolchain.
 ---
 

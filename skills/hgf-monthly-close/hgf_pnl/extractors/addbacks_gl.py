@@ -96,7 +96,7 @@ class AddbacksGLConfig(BaseModel):
             ),
             RowGroupRule(
                 name="other_review_rows",
-                description="Rows with blue review fill not described by the March email thread.",
+                description="Rows with blue review fill not described by the period instruction thread.",
                 fill_colors=["FFC9DAF8"],
             ),
         ]

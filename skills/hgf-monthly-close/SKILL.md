@@ -88,17 +88,87 @@ When the plugin updates, re-run `/hgf-pnl-bootstrap` to pick up the new `hgf_pnl
 
 ## Workflow
 
-1. Discover the package.
-2. Review file classifications and missing expected inputs.
-3. Configure extractors as needed.
-4. Run extractors and write normalized outputs.
-5. Validate extraction totals, formulas, warnings, and manual-review items.
-6. Resolve overrides into an approved values JSON.
-7. Run the consolidated P&L writer.
-8. Validate the generated workbook.
-9. Update the run manifest after each major step.
+1. Stage and repair workbooks into the run directory if any XLSX zip footer is malformed.
+2. Discover the package.
+3. Review file classifications and missing expected inputs.
+4. Configure extractors as needed.
+5. Run extractors and write normalized outputs.
+6. Validate extraction totals, formulas, warnings, and manual-review items.
+7. Build and review `consolidated_values.json` from extractor outputs.
+8. Patch the consolidated template copy.
+9. Run the consolidated P&L writer against the patched template.
+10. Recalculate and validate the generated workbook.
+11. Complete secondary workbook tabs/reports when in scope.
+12. Update the run manifest after each major step.
 
 Do not skip the manifest. It is the audit trail for what the agent believed, used, ignored, changed, and produced.
+
+The March 2026 accountant comparison is now encoded in the tooling:
+
+- `scripts/repair_xlsx.py` stages repaired workbooks without touching source files by default.
+- `scripts/build_values.py` applies the March-derived mapping decisions from extractor outputs.
+- `scripts/patch_template.py` applies the known consolidated-template formula fixes before writing.
+- `docs/hgf_close_adjustments_playbook.md` records the March mismatch analysis and residual diff log.
+- `docs/tab_completion.md` records the broader secondary-tab and department-report procedures.
+
+Prefer these scripts over ad hoc Python snippets. If a new month disagrees materially with the
+generated workbook, add the new rule to `build_values.py` or a workbook postprocessor and cover it
+with a regression test.
+
+## Phase-Gated Runner
+
+Use `run_close_phase.py` when the accountant wants review checkpoints. It intentionally has no
+"run all" command. Each command writes a Markdown review packet and stops.
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/run_close_phase.py" inputs \
+  "sample_files/Workpapers MARCH" \
+  tmp/runs/march-2026 \
+  --year 2026 \
+  --month 3 \
+  --period-label "March 2026" \
+  --stage-repaired-copy
+```
+
+Review `tmp/runs/march-2026/01_inputs_review.md`, then continue only after approval:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/run_close_phase.py" extract \
+  tmp/runs/march-2026/run_manifest.json \
+  --declared-addbacks-total 23195
+```
+
+Review `02_extraction_review.md`, then:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/run_close_phase.py" values \
+  tmp/runs/march-2026/run_manifest.json
+```
+
+Review `03_values_review.md`, then:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/run_close_phase.py" core \
+  tmp/runs/march-2026/run_manifest.json
+```
+
+Review `04_core_workbook_review.md`, recalculate the generated workbook, and validate visible
+FULL/SIMPLE totals before doing secondary tabs. Use individual extractor/build/patch/write scripts
+when a phase needs troubleshooting or a custom override.
+
+## Step 0 — Stage And Repair XLSX Files
+
+Treat source files as immutable. If `openpyxl` raises `BadZipFile`, or if the package came through
+the same upload path as the March 2026 malformed files, repair into a staged directory:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/repair_xlsx.py" \
+  "sample_files/Workpapers MARCH" \
+  --output-dir tmp/runs/march-2026/staged-inputs
+```
+
+The repair script reports `ok`, `truncated`, or `padded` for each workbook. Use the staged copy for
+discovery/extraction. Only use `--in-place` on a staged copy or after explicit user approval.
 
 ## Step 1 — Discover The Package
 
@@ -180,7 +250,7 @@ Two sheets: `Payroll` (source of truth) and `Payroll Distribution` (intermediary
   --format csv
 ```
 
-Output tables: `employees`, `allocations`, `allocation_summaries`, `distribution`. The `allocation_summaries` table is the preferred source for `Payroll - Art` and `Payroll- IT` actuals on `MARCH 2026 FULL `. March 2026 spot checks: 43 employee rows, gross pay total `241,161.25`, Art `32,961.56`, IT `15,846.15`, Production `64,635.26`, Corp `64,655.38`.
+Output tables: `employees`, `allocations`, `allocation_summaries`, `distribution`. The `allocation_summaries` table is the preferred source for `Payroll - Art` and `Payroll- IT` actuals on the period FULL sheet. March 2026 spot checks: 43 employee rows, gross pay total `241,161.25`, Art `32,961.56`, IT `15,846.15`, Production `64,635.26`, Corp `64,655.38`.
 
 Critical writer mapping from `payroll_allocation_summaries.csv`:
 
@@ -215,11 +285,15 @@ Resolve March BR Info rows into writer values using these known labels:
 | `AllPopArt Sales` | `raw_master.sales.apa` |
 | `AllPopArt Returns and Allowances` | `raw_master.returns.apa` |
 | `Employee Benefits` | `full_report.source_totals.employee_benefits` |
-| `Equipment Leasing` | `raw_master.gl.equipment_lease_adjustment` |
-| `Bank Fees` | `raw_master.gl.bank_fees_adjustment` |
-| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees_adjustment` |
+| `Equipment Leasing` | `raw_master.gl.equipment_lease` and `raw_master.gl.equipment_lease_adjustment = 0` |
+| `Bank Fees` | `raw_master.gl.bank_fees` and `raw_master.gl.bank_fees_adjustment = 0` |
+| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees` and `raw_master.gl.merchant_account_fees_adjustment = 0` |
 | `License & Tax` | `raw_master.gl.licenses_taxes_permits` |
 | `LOC Interest` | `raw_master.gl.loc_interest` |
+
+The three replacement rows above are BR Info-as-authority. Do not put the BR value only in the
+adjustment key; doing that leaves the P&L base in place and double-counts or misses the template
+patch flow. Preserve the numeric value exactly as extracted from BR Info; do not round in code.
 
 Review every BR Info row before writing. If a label is new or ambiguous, add it to the manifest as `needs_review` instead of guessing.
 
@@ -338,13 +412,61 @@ The writer reads an approved values JSON. Keys can be nested or flat:
 Key namespaces include:
 - `raw_master.*` — Master File raw-data tab
 - `raw_cogs.*` — COGS & Freight raw-data tab
-- `raw_payroll.*` — Payroll raw-data tab, plus `raw_payroll.allocation_breakdowns.{art,it}.*` for the visible Art/IT actual rows on `MARCH 2026 FULL `
+- `raw_payroll.*` — Payroll raw-data tab, plus `raw_payroll.allocation_breakdowns.{art,it}.*` for the visible Art/IT actual rows on the period's `FULL` sheet.
 
-The writer does not build this JSON from extractor outputs. The agent must explicitly transform reviewed extractor rows into these keys. In particular, do not stop after writing `payroll_allocation_summaries.csv` or `br_info.csv`; map those rows into `consolidated_values.json` before running the writer.
+Build the first draft with `build_values.py`, then review the result and warnings before writing:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/build_values.py" \
+  tmp/runs/march-2026/consolidated_values.json \
+  --year 2026 \
+  --month-num 3 \
+  --pl-by-dept tmp/runs/march-2026/pl_by_dept.csv \
+  --br-info tmp/runs/march-2026/br_info.csv \
+  --monthly-revenue-summary tmp/runs/march-2026/monthly_revenue/monthly_revenue_summary.csv \
+  --monthly-revenue-sales tmp/runs/march-2026/monthly_revenue/monthly_revenue_sales.csv \
+  --monthly-revenue-refunds tmp/runs/march-2026/monthly_revenue/monthly_revenue_refunds.csv \
+  --division-cogs-matrix tmp/runs/march-2026/division_cogs/division_cogs_matrix.csv \
+  --th-revenue-summary tmp/runs/march-2026/th_revenue/th_revenue_summary.csv \
+  --payroll-employees tmp/runs/march-2026/payroll_journal/payroll_employees.csv \
+  --payroll-allocation-summaries tmp/runs/march-2026/payroll_journal/payroll_allocation_summaries.csv \
+  --payroll-distribution tmp/runs/march-2026/payroll_journal/payroll_distribution.csv \
+  --chargeback-customer-detail tmp/runs/march-2026/chargeback_pdf/chargeback_customer_detail.csv
+```
+
+The builder applies these March-derived rules:
+
+- BR Info replacement rows set the base GL value and zero the adjustment.
+- `raw_master.gl.travel` and `raw_master.gl.advertising_marketing` are intentionally not populated.
+- Corp values for consulting, software/web, travel, and meals use `Total Z-COMPANY`.
+- HR Recruiting uses `Operations Dept`.
+- DTC sales use DTC + WS net sales; DTC returns use the full refund total with negative sign.
+- TH returns use the chargeback PDF customer-detail `B&M` total.
+- Standalone Online COGS/material/labor merge into Online-USA, while shipping/FedEx/UPS stay separate.
+- Duplicate Division COGS SUM-formula aggregate rows are filtered out.
+- Online Samples map to `raw_cogs.*.bm_usa_samples`.
+- Trend House FedEx/sample shipping writes to `raw_cogs.shipping_for_samples.current_month`, which the current template adds to TH shipping through `RAW DATA_Master File!B97`.
+- Corporate Shipping FedEx writes to `raw_cogs.fedex.corporate_shipping`.
+
+Review every builder warning. A clean March 2026 sample currently produces 120+ keys with no
+warnings. If a required source table is missing, do not let skipped writer keys carry stale template
+values forward; either obtain the source, set a reviewed zero, or record a manual override.
 
 ## Step 5 — Run The Writer
 
-The writer targets the hidden raw-data tabs and preserves the visible `MARCH 2026 FULL ` formulas and styles:
+Patch the consolidated template copy before writing:
+
+```bash
+"$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/patch_template.py" \
+  "sample_files/Workpapers MARCH/DATA/HGF CONSOLIDATED_MARCH 2026.xlsx" \
+  tmp/runs/march-2026/HGF_CONSOLIDATED_MARCH_2026_PATCHED_TEMPLATE.xlsx
+```
+
+The patcher fixes the known March template issues: Online LUX travel duplicate, hardcoded Merchant
+Account Fees, phantom APA merchant fees, Art Assets allocation percentages, and Online-USA shipping
+flow-through. Run the writer against the patched template path, not the original source workbook.
+
+The writer targets the hidden raw-data tabs and preserves the visible period `FULL` sheet formulas and styles:
 
 ```text
 RAW DATA_Master File
@@ -352,7 +474,7 @@ RAW DATA_COGS & Freight
 RAW DATA_Payroll
 ```
 
-Known exception: `MARCH 2026 FULL !EB48` is the hidden source-total cell for Employee Benefits. The March template does not stage this BR Info override in a raw-data tab, so the writer config may write that hidden source cell directly.
+Known exception: `EB48` on the period `FULL` sheet is the hidden source-total cell for Employee Benefits. The current template does not stage this BR Info override in a raw-data tab, so the writer config may write that hidden source cell directly.
 
 By default the writer will not overwrite an existing formula cell. Protected raw-tab subtotal formulas include:
 - `RAW DATA_Master File!B50, B57, B63, B75, B84, B112`
@@ -360,7 +482,9 @@ By default the writer will not overwrite an existing formula cell. Protected raw
 
 If a reviewed config intentionally needs to replace a formula, set `overwrite_formula` on that specific cell write. The March 2026 payroll allocation layout deliberately replaces the template's old Lital allocation total row: `RAW DATA_Payroll!A24` becomes `CORP`, `B24` receives `raw_payroll.lital_allocation.corp`, `B25` becomes `=SUM(B21:B24)`, and `B26` is cleared.
 
-The writer can refresh the visible `Payroll - Art` and `Payroll- IT` actual formulas on `MARCH 2026 FULL ` when `raw_payroll.allocation_breakdowns` values are present. If no breakdown values are present, those cells are skipped and the template formulas remain unchanged.
+The writer auto-detects the period `FULL` sheet. The default config still uses `MARCH 2026 FULL ` as a legacy placeholder, but at runtime it resolves that placeholder to the actual sheet name, such as `APRIL 2026 FULL `.
+
+The writer can refresh the visible `Payroll - Art` and `Payroll- IT` actual formulas on the period `FULL` sheet when `raw_payroll.allocation_breakdowns` values are present. If no breakdown values are present, those cells are skipped and the template formulas remain unchanged.
 
 Generate an editable writer config:
 
@@ -375,7 +499,7 @@ Write the workbook from approved values:
 
 ```bash
 "$HGF_PY" "$HGF_ROOT/skills/hgf-monthly-close/scripts/write_consolidated_pnl.py" \
-  "sample_files/HGF CONSOLIDATED_MARCH 2026 Template.xlsx" \
+  tmp/runs/march-2026/HGF_CONSOLIDATED_MARCH_2026_PATCHED_TEMPLATE.xlsx \
   tmp/runs/march-2026/HGF_CONSOLIDATED_MARCH_2026_GENERATED.xlsx \
   --values tmp/runs/march-2026/consolidated_values.json \
   --config tmp/runs/march-2026/consolidated_writer_config.json
@@ -414,9 +538,30 @@ Before saying an output workbook is ready:
 6. Record validation results in the manifest.
 
 Known workbook-specific concerns:
-- `MARCH 2026 FULL ` is formula-heavy and depends on the raw-data tabs.
+- The period `FULL` sheet is formula-heavy and depends on the raw-data tabs.
 - The `Payroll` tab is the payroll source of truth. The `Payroll Distribution` tab is an intermediary copy and may contain stale formulas, especially in the March 2026 `Lital Allocation in G&A Exp` block.
 - Some hidden legacy columns reference `RAW DATA_Master File!B134:B151`, while the template raw tab currently ends at row 133. Flag these as stale hidden references unless the client says otherwise.
+
+## Step 8 — Secondary Tabs And Department Reports
+
+When the user asks for a complete close workbook, not just the generated FULL/SIMPLE/raw tabs,
+continue with `docs/tab_completion.md`. That reference covers:
+
+- `Revenue Per Employee`
+- `Chargeback Recap`
+- `Trailing 12 Months`
+- `Mkt Spnd vs Rev`
+- `SGA and NP vs Rev`
+- `YTD`
+- `Monthly YoY`
+- `YTD By Department`
+- `Online Returns Accrual v Actual`
+- Diego Format and Department Reports workbooks
+
+Apply those procedures after the generated workbook has been recalculated, because most secondary
+tabs source static values from the period `SIMPLE` sheet, period `FULL` sheet, or formula-driven channel
+tabs. Preserve formulas in destination tabs unless the procedure explicitly says to paste static
+values.
 
 ## Manifest Discipline
 
@@ -457,6 +602,10 @@ Never present a generated workbook as client-ready if formula recalculation or r
 | `extract_addbacks_gl.py` | `hgf_pnl.extractors.addbacks_gl` | Read email/PDF first |
 | `profile_chargeback_pdf.py` | `hgf_pnl.extractors.chargeback_pdf` | Profile before extracting |
 | `extract_chargeback_pdf.py` | `hgf_pnl.extractors.chargeback_pdf` | Run with profiled config |
+| `run_close_phase.py` | `hgf_pnl.pipeline.close_phases` | Phase-gated inputs/extract/values/core runner |
+| `repair_xlsx.py` | `hgf_pnl.pipeline.repair` | Stage repaired workbook copies |
+| `build_values.py` | `hgf_pnl.pipeline.close_values` | Transform extractor outputs into writer keys |
+| `patch_template.py` | `hgf_pnl.pipeline.template_patch` | Apply known consolidated-template formula patches |
 | `write_consolidated_pnl.py` | `hgf_pnl.writers.consolidated_pnl` | Writes hidden raw-data tabs only |
 
-Detailed module documentation lives in `$HGF_ROOT/skills/hgf-monthly-close/docs/pipeline.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/extractors.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/consolidated_writer.md`, and `$HGF_ROOT/skills/hgf-monthly-close/docs/priority_file_exploration.md`.
+Detailed module documentation lives in `$HGF_ROOT/skills/hgf-monthly-close/docs/pipeline.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/extractors.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/consolidated_writer.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/hgf_close_adjustments_playbook.md`, `$HGF_ROOT/skills/hgf-monthly-close/docs/tab_completion.md`, and `$HGF_ROOT/skills/hgf-monthly-close/docs/priority_file_exploration.md`.

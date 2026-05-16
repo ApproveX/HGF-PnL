@@ -222,7 +222,7 @@ For the sample workbook:
 - Non-zero employee allocation rows: `24`
 - Non-zero allocation summary rows: `13`
 
-The `allocation_summaries` table is the preferred source for report rows that need department-level allocation detail, such as `Payroll - Art` and `Payroll- IT` on `MARCH 2026 FULL `. For March 2026:
+The `allocation_summaries` table is the preferred source for period FULL report rows that need department-level allocation detail, such as `Payroll - Art` and `Payroll- IT`. For March 2026:
 
 - Art comes from `Payroll!G47:N47`: `OG DTC`, `Online`, `TH`, `General`, and `Total`.
 - IT comes from `Payroll!G38:J38`: `OG DTC`, `Online`, `General`, and `Total`.
@@ -367,11 +367,15 @@ Known March labels and writer targets:
 | `AllPopArt Sales` | `raw_master.sales.apa` |
 | `AllPopArt Returns and Allowances` | `raw_master.returns.apa` |
 | `Employee Benefits` | `full_report.source_totals.employee_benefits` |
-| `Equipment Leasing` | `raw_master.gl.equipment_lease_adjustment` |
-| `Bank Fees` | `raw_master.gl.bank_fees_adjustment` |
-| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees_adjustment` |
+| `Equipment Leasing` | `raw_master.gl.equipment_lease` and `raw_master.gl.equipment_lease_adjustment = 0` |
+| `Bank Fees` | `raw_master.gl.bank_fees` and `raw_master.gl.bank_fees_adjustment = 0` |
+| `Merchant Account Fees` | `raw_master.gl.merchant_account_fees` and `raw_master.gl.merchant_account_fees_adjustment = 0` |
 | `License & Tax` | `raw_master.gl.licenses_taxes_permits` |
 | `LOC Interest` | `raw_master.gl.loc_interest` |
+
+`Equipment Leasing`, `Bank Fees`, and `Merchant Account Fees` are replacement values, not additive
+adjustments. The values builder writes the BR Info value to the base GL key and zeroes the matching
+adjustment key.
 
 ### Output Shape
 

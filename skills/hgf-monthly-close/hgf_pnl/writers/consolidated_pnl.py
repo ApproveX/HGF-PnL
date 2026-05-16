@@ -17,6 +17,7 @@ RAW_DATA_SHEETS = [
     "RAW DATA_COGS & Freight",
     "RAW DATA_Payroll",
 ]
+LEGACY_FULL_REPORT_SHEET = "MARCH 2026 FULL "
 
 
 class CellWrite(BaseModel):
@@ -79,6 +80,7 @@ class CellValidation(BaseModel):
 class ConsolidatedPNLWriterConfig(BaseModel):
     """Agent-adjustable writer config for the HGF consolidated P&L template."""
 
+    full_report_sheet_name: str | None = None
     raw_data_sheets: list[str] = Field(default_factory=lambda: list(RAW_DATA_SHEETS))
     cell_writes: list[CellWrite] = Field(default_factory=list)
     validations: list[CellValidation] = Field(default_factory=list)
@@ -134,7 +136,7 @@ def write_consolidated_pnl(
     values: dict[str, Any] | None = None,
     config: ConsolidatedPNLWriterConfig | None = None,
 ) -> ConsolidatedPNLWriteResult:
-    config = config or default_consolidated_pnl_writer_config()
+    config = (config or default_consolidated_pnl_writer_config()).model_copy(deep=True)
     values = values or {}
     workbook = load_workbook(template_path)
     written_cells: list[dict[str, Any]] = []
@@ -142,6 +144,7 @@ def write_consolidated_pnl(
     warnings: list[str] = []
 
     try:
+        resolve_dynamic_sheet_names(workbook, config, warnings)
         validate_sheets_exist(workbook, config.raw_data_sheets, warnings)
         apply_sheet_visibility(workbook, config.sheet_visibility, warnings)
 
@@ -403,6 +406,91 @@ def apply_sheet_visibility(
         workbook[rule.sheet_name].sheet_state = rule.state
 
 
+def resolve_dynamic_sheet_names(
+    workbook: Workbook,
+    config: ConsolidatedPNLWriterConfig,
+    warnings: list[str],
+) -> None:
+    if not config_references_full_report(config):
+        return
+
+    full_sheet_name = find_full_report_sheet(workbook, config.full_report_sheet_name, warnings)
+    if full_sheet_name is None:
+        return
+    config.full_report_sheet_name = full_sheet_name
+
+    for write in config.cell_writes:
+        if is_full_report_sheet_reference(write.sheet_name):
+            write.sheet_name = full_sheet_name
+    for validation in config.validations:
+        if is_full_report_sheet_reference(validation.sheet_name):
+            validation.sheet_name = full_sheet_name
+    for visibility in config.sheet_visibility:
+        if is_full_report_sheet_reference(visibility.sheet_name):
+            visibility.sheet_name = full_sheet_name
+
+
+def config_references_full_report(config: ConsolidatedPNLWriterConfig) -> bool:
+    if config.full_report_sheet_name:
+        return True
+    return any(
+        is_full_report_sheet_reference(name)
+        for name in (
+            [write.sheet_name for write in config.cell_writes]
+            + [validation.sheet_name for validation in config.validations]
+            + [visibility.sheet_name for visibility in config.sheet_visibility]
+        )
+    )
+
+
+def find_full_report_sheet(
+    workbook: Workbook,
+    requested_sheet_name: str | None,
+    warnings: list[str],
+) -> str | None:
+    if requested_sheet_name:
+        resolved = resolve_sheet_name(workbook, requested_sheet_name)
+        if resolved is None:
+            warnings.append(f"Configured full report sheet not found: {requested_sheet_name}")
+        return resolved
+
+    legacy = resolve_sheet_name(workbook, LEGACY_FULL_REPORT_SHEET)
+    if legacy is not None:
+        return legacy
+
+    candidates = [
+        sheet_name
+        for sheet_name in workbook.sheetnames
+        if "full" in normalize_sheet_key(sheet_name).split()
+        and not sheet_name.startswith("RAW DATA_")
+    ]
+    if not candidates:
+        warnings.append("Could not detect a FULL report sheet for dynamic writer mappings")
+        return None
+    return candidates[0]
+
+
+def resolve_sheet_name(workbook: Workbook, sheet_name: str) -> str | None:
+    if sheet_name in workbook.sheetnames:
+        return sheet_name
+    stripped = sheet_name.strip()
+    for candidate in workbook.sheetnames:
+        if candidate.strip() == stripped:
+            return candidate
+    return None
+
+
+def is_full_report_sheet_reference(sheet_name: str) -> bool:
+    return sheet_name == LEGACY_FULL_REPORT_SHEET or (
+        "full" in normalize_sheet_key(sheet_name).split()
+        and not sheet_name.startswith("RAW DATA_")
+    )
+
+
+def normalize_sheet_key(value: str) -> str:
+    return " ".join(value.lower().replace("_", " ").split())
+
+
 def validate_sheets_exist(workbook: Workbook, sheet_names: list[str], warnings: list[str]) -> None:
     for sheet_name in sheet_names:
         if sheet_name not in workbook.sheetnames:
@@ -418,10 +506,11 @@ def configure_recalculation(workbook: Workbook, config: ConsolidatedPNLWriterCon
 
 def default_consolidated_pnl_writer_config() -> ConsolidatedPNLWriterConfig:
     return ConsolidatedPNLWriterConfig(
+        full_report_sheet_name=None,
         cell_writes=default_raw_data_cell_writes(),
         validations=default_raw_data_validations(),
         sheet_visibility=[
-            SheetVisibility(sheet_name="MARCH 2026 FULL ", state="visible"),
+            SheetVisibility(sheet_name=LEGACY_FULL_REPORT_SHEET, state="visible"),
             SheetVisibility(sheet_name="RAW DATA_Master File", state="hidden"),
             SheetVisibility(sheet_name="RAW DATA_COGS & Freight", state="hidden"),
             SheetVisibility(sheet_name="RAW DATA_Payroll", state="hidden"),
@@ -430,7 +519,7 @@ def default_consolidated_pnl_writer_config() -> ConsolidatedPNLWriterConfig:
 
 
 def default_raw_data_cell_writes() -> list[CellWrite]:
-    """Known March template staging-cell targets.
+    """Known consolidated template staging-cell targets.
 
     Source keys are intentionally semantic rather than tied to one extractor. The agent
     can build this value map after validating extractor outputs and overrides.
@@ -439,14 +528,14 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
     return [
         # Hidden source-total cells on the full report without raw-tab staging.
         map_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "EB48",
             "full_report.source_totals.employee_benefits",
         ),
         # Visible Payroll Art/IT actual formulas. These rows are manually refreshed
         # from the Payroll sheet's department allocation totals each month.
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "E44",
             "{direct}+F7*{general}",
             {
@@ -456,7 +545,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art Trend House: direct TH allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "P44",
             "{direct}+Q7*{general}",
             {
@@ -466,7 +555,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art OG Specialty: direct B&M USA allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AA44",
             "{direct}+AB7*{general}",
             {
@@ -476,7 +565,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art Online Lux: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AL44",
             "{direct}+AM7*{general}",
             {
@@ -486,7 +575,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art Online: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AW44",
             "{direct}+AX7*{general}",
             {
@@ -496,7 +585,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art OG-DTC: direct OG DTC allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "BH44",
             "{direct}+BI7*{general}",
             {
@@ -506,7 +595,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art All Pop Art: direct APA allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "BV44",
             "{direct}+BW7*{general}",
             {
@@ -516,7 +605,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll Art Ink: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "E45",
             "{direct}+F7*{general}",
             {
@@ -526,7 +615,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT Trend House: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "P45",
             "{direct}+Q7*{general}",
             {
@@ -536,7 +625,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT OG Specialty: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AA45",
             "{direct}+AB7*{general}",
             {
@@ -546,7 +635,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT Online Lux: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AL45",
             "{direct}+AM7*{general}",
             {
@@ -556,7 +645,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT Online: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "AW45",
             "{direct}+AX7*{general}",
             {
@@ -566,7 +655,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT OG-DTC: direct OG DTC allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "BH45",
             "{direct}+BI7*{general}",
             {
@@ -576,7 +665,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             note="Payroll IT All Pop Art: direct allocation plus revenue-share General allocation.",
         ),
         formula_cell(
-            "MARCH 2026 FULL ",
+            LEGACY_FULL_REPORT_SHEET,
             "BV45",
             "{direct}+BW7*{general}",
             {
@@ -707,7 +796,7 @@ def default_raw_data_cell_writes() -> list[CellWrite]:
             cell="A24",
             value="CORP",
             value_type="string",
-            note="March 2026 final workbook moves CORP to row 24 in the Lital allocation block.",
+            note="Reviewed final workbook moves CORP to row 24 in the Lital allocation block.",
         ),
         map_cell("RAW DATA_Payroll", "B24", "raw_payroll.lital_allocation.corp"),
         CellWrite(
@@ -805,10 +894,12 @@ def write_example_values_from_workbook(
 ) -> dict[str, Any]:
     """Write a values JSON by reading configured source cells from a completed workbook."""
 
-    config = config or default_consolidated_pnl_writer_config()
+    config = (config or default_consolidated_pnl_writer_config()).model_copy(deep=True)
     workbook = load_workbook(completed_workbook_path, data_only=False)
     values: dict[str, Any] = {}
     try:
+        warnings: list[str] = []
+        resolve_dynamic_sheet_names(workbook, config, warnings)
         for write in config.cell_writes:
             if write.source_key is None or write.sheet_name not in workbook.sheetnames:
                 continue

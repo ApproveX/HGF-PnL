@@ -35,8 +35,9 @@ def extract(
         console.print(f"Wrote default config to {init_config}")
         raise typer.Exit()
 
-    extractor_config = ChargebackPDFConfig.from_json_file(config)
+    extractor_config = ChargebackPDFConfig.from_json_file(config) if config is not None else None
     result = extract_chargeback_pdf(path, extractor_config)
+    effective_config = result.config
     monthly = result.monthly_summary
     customer_detail = result.customer_detail
     reconciliation = result.reconciliation
@@ -50,7 +51,7 @@ def extract(
     table.add_column("Table")
     table.add_column("Rows", justify="right")
     table.add_column("Key Amount", justify="right")
-    table.add_row("monthly_summary", str(monthly.height), f"{target_month_total(monthly, extractor_config):,.2f}")
+    table.add_row("monthly_summary", str(monthly.height), f"{target_month_total(monthly, effective_config):,.2f}")
     table.add_row("customer_detail", str(customer_detail.height), f"{named_total(customer_detail, 'Grand Total', 'amount'):,.2f}")
     table.add_row(
         "reconciliation",
@@ -59,10 +60,12 @@ def extract(
     )
     console.print(table)
 
-    current = monthly.filter(
-        (pl.col("year") == extractor_config.target_year)
-        & (pl.col("month_name") == extractor_config.target_month_name)
-    )
+    current = pl.DataFrame()
+    if effective_config.target_year is not None and effective_config.target_month_name is not None:
+        current = monthly.filter(
+            (pl.col("year") == effective_config.target_year)
+            & (pl.col("month_name") == effective_config.target_month_name)
+        )
     if not current.is_empty():
         console.print(current.select(["category", "amount", "percent_of_total", "source_page", "source_line"]))
 
@@ -85,6 +88,8 @@ def sum_column(df: pl.DataFrame, column: str) -> float:
 
 def target_month_total(df: pl.DataFrame, config: ChargebackPDFConfig) -> float:
     if df.is_empty():
+        return 0.0
+    if config.target_year is None or config.target_month_name is None:
         return 0.0
     filtered = df.filter(
         (pl.col("year") == config.target_year)
